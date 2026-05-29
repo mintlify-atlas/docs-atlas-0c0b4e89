@@ -1,7 +1,7 @@
 ---
-title: "Deployment Logs and Health Check"
+title: "CasaOS Deployment Logs and Post-Install Health Check"
 sidebarTitle: "Logs & Health Check"
-description: "How casaosscript.sh logs all output to /var/log/casaos_deploy.log and what the final health check verifies after installation."
+description: "How casaosscript.sh appends all output to /var/log/casaos_deploy.log and verifies the CasaOS service is running after installation."
 ---
 
 From the moment it starts, `casaosscript.sh` captures every line of output — both standard output and standard error — into a persistent log file. This is achieved with the line `exec > >(tee -a "$LOG_FILE") 2>&1` near the top of the script, which redirects all subsequent stdout and stderr through `tee`. The `tee` command writes each line to `/var/log/casaos_deploy.log` while simultaneously printing it to your terminal in real time, so you never have to choose between watching progress live and having a record for later review.
@@ -35,18 +35,15 @@ tail -n 50 /var/log/casaos_deploy.log
 After CasaOS is installed and the media directory structure is created, the script performs a four-step health check to confirm that everything started correctly.
 
 ```bash
-# 6. Final Health Check
-echo -e "${YELLOW}🏥 Step 4: Final Health Check...${NC}"
 sleep 5
 if systemctl is-active --quiet casaos; then
-    echo -e "${GREEN}✅ CasaOS Service: RUNNING${NC}"
+    echo "✅ CasaOS Service: RUNNING"
 else
-    echo -e "${RED}❌ CasaOS Service: FAILED TO START${NC}"
+    echo "❌ CasaOS Service: FAILED TO START"
 fi
 
 IP_ADDR=$(hostname -I | awk '{print $1}')
-echo -e "\n${GREEN}DONE! Log saved at $LOG_FILE${NC}"
-echo -e "Access: http://$IP_ADDR"
+echo "Access: http://$IP_ADDR"
 ```
 
 The four steps in sequence are:
