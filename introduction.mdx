@@ -1,0 +1,126 @@
+---
+title: "Proxmox CasaOS Deploy: Automate Your Home Media Server"
+sidebarTitle: "Introduction"
+description: "Learn what Proxmox CasaOS Deploy does, how the script works, and when to use it to build a self-hosted home media server on Proxmox."
+---
+
+**Proxmox CasaOS Deploy** is a single Bash script — `casaosscript.sh` — that turns a bare Proxmox LXC container into a fully configured home media server in minutes. Run it on a fresh container and it handles everything: updating the system, installing dependencies, pulling down CasaOS via the official installer, creating the media directory tree, and confirming the service is healthy before handing control back to you. Run it again on a container that already has CasaOS and the script automatically shifts into maintenance mode, giving you a focused menu for common admin tasks without any risk of overwriting your existing setup.
+
+## What is CasaOS
+
+CasaOS is an open-source home cloud operating system built by [IceWhaleTech](https://www.ice-whale.com/). It sits on top of a standard Linux install and provides a clean, browser-based dashboard for managing your server. Its built-in app store lets you deploy Docker-based applications — media servers, download clients, dashboards, and more — with a single click, without writing any `docker run` or `docker-compose` commands by hand. CasaOS is designed to be approachable for users who are new to self-hosting while still being flexible enough for power users.
+
+## What is Proxmox LXC
+
+Proxmox Virtual Environment supports two virtualisation technologies: full virtual machines (QEMU/KVM) and Linux Containers (LXC). LXC containers share the host kernel instead of emulating an entire hardware stack. The result is dramatically lower RAM and CPU overhead compared with a VM, near-native disk and network performance, and sub-second startup times. For always-on services like a home media server — where you want the workload isolated from the host but do not need a separate kernel — LXC is the practical choice.
+
+## How the Script Works
+
+The script inspects the container the moment it runs. If CasaOS is already present (`command -v casaos`), it enters maintenance mode. If CasaOS is absent, it performs a full installation. Both paths are described below.
+
+<Tabs>
+  <Tab title="Fresh Install">
+    When no existing CasaOS installation is detected the script executes four numbered steps, printing a coloured progress banner before each one.
+
+    **Step 1 — System update and dependencies**
+
+    ```bash
+    apt-get update
+    apt-get install curl wget git htop neofetch -y
+    ```
+
+    After installing the packages the script verifies that `curl` is reachable. If the binary is missing (for example because there is no network route out of the container) it prints a fatal error and exits rather than continuing to a broken state.
+
+    **Step 2 — CasaOS installer**
+
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/IceWhaleTech/get/main/get.sh | bash
+    ```
+
+    This pulls the official IceWhaleTech bootstrap script and pipes it directly to Bash, which handles downloading the correct CasaOS release for the container's architecture and wiring up the systemd services.
+
+    **Step 3 — Media directory structure**
+
+    ```bash
+    mkdir -p /DATA/Media/Movies
+    mkdir -p /DATA/Media/TV_Shows
+    mkdir -p /DATA/Downloads
+    chmod -R 777 /DATA/Media
+    ```
+
+    The directories are created under `/DATA/Media` with open permissions so that Docker containers (Jellyfin, Plex, and similar apps) can read and write without permission errors.
+
+    **Step 4 — Final health check**
+
+    ```bash
+    systemctl is-active --quiet casaos
+    ```
+
+    The script waits five seconds for the service to stabilise, then queries systemd. A green banner confirms CasaOS is running; a red banner flags a startup failure. Either way the script prints the container's LAN IP address so you know exactly where to point your browser.
+  </Tab>
+  <Tab title="Maintenance Mode">
+    When the script detects an existing CasaOS installation it skips every installation step and instead presents a numbered menu:
+
+    ```bash
+    if command -v casaos &> /dev/null; then
+        echo "1) Reset User Password"
+        echo "2) Check Service Status"
+        echo "3) Exit"
+        read -p "Select an option: " opt
+    fi
+    ```
+
+    **Option 1 — Reset user password**
+
+    Prompts for a username and calls the CasaOS user-service utility to reset that account's password:
+
+    ```bash
+    casaos-user-service-db-util -reset-user-password -u $username
+    ```
+
+    **Option 2 — Check service status**
+
+    Runs a non-paged systemd status report so you can see whether CasaOS is active, any recent log lines, and the process uptime:
+
+    ```bash
+    systemctl status casaos --no-pager
+    ```
+
+    **Option 3 — Exit** closes the script without making any changes.
+  </Tab>
+</Tabs>
+
+## What Gets Installed
+
+A fresh install run leaves the container with the following additions:
+
+- **`curl`** — used by the CasaOS bootstrap script and available for general use
+- **`wget`** — for downloading files from the command line
+- **`git`** — version control tooling
+- **`htop`** — interactive process and resource monitor
+- **`neofetch`** — system information display utility
+- **CasaOS** — installed from the official IceWhaleTech installer at `https://raw.githubusercontent.com/IceWhaleTech/get/main/get.sh`
+- **`/DATA/Media/Movies`** — media directory for film libraries
+- **`/DATA/Media/TV_Shows`** — media directory for television libraries
+- **`/DATA/Downloads`** — landing directory for download clients
+
+## Project Scope
+
+<Note>
+  `casaosscript.sh` targets **Debian and Ubuntu** based systems only. It is designed to run inside a **Proxmox LXC container** — not inside a full VM and not on bare-metal hardware. Running it outside of a Debian/Ubuntu LXC environment may produce unexpected results or fail at the `apt-get` step.
+</Note>
+
+<CardGroup cols={2}>
+  <Card title="Home Media Server" icon="film">
+    Pair CasaOS with Jellyfin or Plex using the pre-created `/DATA/Media` directory structure for an instant, permission-safe media library.
+  </Card>
+  <Card title="Docker App Platform" icon="box">
+    Use the CasaOS app store to deploy any Docker-based self-hosted app — dashboards, download clients, photo managers, and more — without touching the CLI.
+  </Card>
+  <Card title="Lightweight Container Host" icon="server">
+    LXC overhead is minimal, meaning you can run CasaOS alongside other containers on the same Proxmox host without fighting for RAM.
+  </Card>
+  <Card title="Quick Lab Reset" icon="rotate">
+    Re-run the script in maintenance mode to reset credentials or diagnose service issues without tearing down and rebuilding the container.
+  </Card>
+</CardGroup>

@@ -1,0 +1,158 @@
+---
+title: "Installing CasaOS with the Deployment Script"
+sidebarTitle: "Installation"
+description: "Detailed walkthrough of each phase of casaosscript.sh — from dependency installation and CasaOS setup to media directory creation and health verification."
+---
+
+This page walks through each phase of `casaosscript.sh` v2.0 line by line so you understand exactly what runs on your system, in what order, and why. The script is fully automated — once started, it requires no further input unless CasaOS is already installed, in which case it enters maintenance mode instead.
+
+## Downloading the Script
+
+Get the script onto your LXC container using either of the following methods from inside the container shell:
+
+<CodeGroup>
+
+```bash wget
+wget https://raw.githubusercontent.com/damianiglesias/proxmox-casaos-deploy/main/casaosscript.sh
+chmod +x casaosscript.sh
+```
+
+```bash git clone
+git clone https://github.com/damianiglesias/proxmox-casaos-deploy
+cd proxmox-casaos-deploy
+chmod +x casaosscript.sh
+```
+
+</CodeGroup>
+
+Once downloaded, run the script as root:
+
+```bash
+bash casaosscript.sh
+```
+
+## Logging
+
+Before any phase runs, the script redirects all stdout and stderr to a log file using process substitution so nothing is lost:
+
+```bash
+LOG_FILE="/var/log/casaos_deploy.log"
+exec > >(tee -a "$LOG_FILE") 2>&1
+```
+
+Every line of output — including error messages from `apt-get` and the CasaOS installer — is appended to `/var/log/casaos_deploy.log` and displayed on the terminal simultaneously. This log is the first place to look if something goes wrong.
+
+## Phase 1 — Root Check
+
+The script's first real action is to verify it is running as root. If the effective user ID (`$EUID`) is anything other than `0`, it prints an error and exits immediately:
+
+```bash
+if [ "$EUID" -ne 0 ]; then 
+  echo -e "${RED}❌ Please run as root${NC}"
+  exit 1
+fi
+```
+
+If you see `❌ Please run as root`, prefix your command with `sudo` or switch to the root user with `su -`.
+
+## Phase 2 — Maintenance Mode Detection
+
+Before attempting any installation, the script checks whether CasaOS is already present on the system:
+
+```bash
+if command -v casaos &> /dev/null; then
+    echo -e "${YELLOW}ℹ️  CasaOS is already installed.${NC}"
+    echo "1) Reset User Password"
+    echo "2) Check Service Status"
+    echo "3) Exit"
+    read -p "Select an option: " opt
+    case $opt in
+        1)
+            read -p "Enter username: " username
+            casaos-user-service-db-util -reset-user-password -u $username
+            exit ;;
+        2)
+            systemctl status casaos --no-pager
+            exit ;;
+        *) exit ;;
+    esac
+fi
+```
+
+If the `casaos` binary is found on `PATH`, the script skips installation entirely and presents an interactive maintenance menu instead. See the [Maintenance Mode](/guides/maintenance-mode) page for full details on these options.
+
+## Phase 3 — Dependency Installation
+
+With the root check passed and no existing CasaOS detected, the script updates the package index and installs a set of required and utility packages:
+
+```bash
+apt-get update
+apt-get install curl wget git htop neofetch -y
+```
+
+After installation, the script verifies that `curl` was successfully installed — since the next phase depends on it:
+
+```bash
+if ! command -v curl &> /dev/null; then
+    echo -e "${RED}❌ FATAL ERROR: curl could not be installed. Check your internet connection.${NC}"
+    exit 1
+fi
+```
+
+If `curl` is missing after the install attempt, the script exits with a fatal error. This almost always means the container cannot reach the Debian/Ubuntu package mirrors — check your network configuration and try again.
+
+## Phase 4 — CasaOS Installation
+
+The script invokes the official **IceWhaleTech** CasaOS installer via a curl pipe to bash:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/IceWhaleTech/get/main/get.sh | bash
+```
+
+<Info>
+  The IceWhaleTech installer (`get.sh`) handles the full CasaOS setup: it detects your OS and architecture, adds the CasaOS APT repository, installs the CasaOS core packages and companion services (including the app management daemon and user service), and registers the `casaos` systemd service so that CasaOS starts automatically on boot.
+</Info>
+
+This phase is the longest-running step. Installer output will be visible on the terminal and captured in the log file simultaneously.
+
+## Phase 5 — Media Directory Creation
+
+After CasaOS is installed, the script creates a standard `/DATA` directory tree and sets broad permissions:
+
+```bash
+mkdir -p /DATA/Media/Movies
+mkdir -p /DATA/Media/TV_Shows
+mkdir -p /DATA/Downloads
+chmod -R 777 /DATA/Media
+```
+
+<Tip>
+  The `777` permission on `/DATA/Media` is intentional. Docker containers launched by CasaOS apps (such as Jellyfin or Plex) often run as non-root UIDs that differ from any user on the host. Using `777` ensures those containers can read and write media files without bind-mount permission errors. See the [Directory Structure](/guides/directory-structure) page for details and for guidance on using more restrictive permissions in production.
+</Tip>
+
+## Phase 6 — Health Check
+
+Once directory creation is complete, the script pauses for five seconds to allow the CasaOS service to finish its own initialization, then queries its status:
+
+```bash
+sleep 5
+if systemctl is-active --quiet casaos; then
+    echo -e "${GREEN}✅ CasaOS Service: RUNNING${NC}"
+else
+    echo -e "${RED}❌ CasaOS Service: FAILED TO START${NC}"
+fi
+```
+
+Finally, it retrieves the container's primary LAN IP address and prints the access URL:
+
+```bash
+IP_ADDR=$(hostname -I | awk '{print $1}')
+echo -e "\n${GREEN}DONE! Log saved at $LOG_FILE${NC}"
+echo -e "Access: http://$IP_ADDR"
+```
+
+Open the printed URL in a browser on your local network to complete the CasaOS first-run setup wizard. If the service shows `FAILED TO START`, check the log at `/var/log/casaos_deploy.log` and run `systemctl status casaos` for more detail.
+
+<Note>
+  See the [Directory Structure](/guides/directory-structure) page for a full breakdown of the `/DATA` layout created in Phase 5 and how to mount those directories inside Jellyfin, Plex, and other CasaOS app containers.
+</Note>

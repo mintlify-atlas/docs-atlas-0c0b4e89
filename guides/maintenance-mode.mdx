@@ -1,0 +1,77 @@
+---
+title: "CasaOS Maintenance Mode: Password Reset and Service Status"
+sidebarTitle: "Maintenance Mode"
+description: "Use casaosscript.sh maintenance mode to reset a CasaOS user password or check systemd service status on an existing installation."
+---
+
+When `casaosscript.sh` is run on a system where CasaOS is already installed, it detects the existing installation using `command -v casaos` and automatically switches to **maintenance mode** instead of running the full installation sequence. In maintenance mode, the script presents a simple interactive menu that lets you perform common administrative tasks without touching the rest of the deployment logic.
+
+## Entering Maintenance Mode
+
+To enter maintenance mode, simply re-run the same script as root on the host where CasaOS is already deployed:
+
+```bash
+bash casaosscript.sh
+```
+
+Because CasaOS is already present on the system, the script skips the installation steps and immediately displays the maintenance menu:
+
+```text
+ℹ️  CasaOS is already installed.
+1) Reset User Password
+2) Check Service Status
+3) Exit
+Select an option:
+```
+
+Type the number corresponding to the action you want to take and press **Enter**.
+
+## Option 1 — Reset User Password
+
+Selecting `1` prompts you to enter the CasaOS username whose password you want to reset. Once you supply the username, the script calls the CasaOS utility `casaos-user-service-db-util` to perform the reset directly against the user database.
+
+**Interactive flow:**
+
+```text
+Enter username: admin
+```
+
+**Underlying command executed by the script:**
+
+```bash
+casaos-user-service-db-util -reset-user-password -u $username
+```
+
+<Note>
+  The username is the one you set during the CasaOS first-run setup wizard when you first accessed the web UI. If you did not change it, the default is typically `admin`.
+</Note>
+
+<Warning>
+  This command directly modifies the CasaOS user database. Use it only if you are locked out of the web UI and cannot log in through normal means. Avoid running it unnecessarily on a working installation.
+</Warning>
+
+## Option 2 — Check Service Status
+
+Selecting `2` runs the following command and prints the full systemd service status directly to your terminal:
+
+```bash
+systemctl status casaos --no-pager
+```
+
+**Example output for a healthy installation:**
+
+```text
+● casaos.service - CasaOS
+     Loaded: loaded (/lib/systemd/system/casaos.service; enabled; ...)
+     Active: active (running) since ...
+```
+
+The `--no-pager` flag is important here — without it, `systemctl status` opens the output in a pager (like `less`) that requires you to press `q` to exit. With `--no-pager`, all output flows directly to the terminal, which is friendlier in scripted and remote SSH sessions.
+
+## Option 3 — Exit
+
+Selecting `3`, or entering any key that does not match `1` or `2`, exits the script immediately without making any changes to your installation.
+
+<Tip>
+  For broader CasaOS administration — including managing apps, browsing files, and adjusting system settings — the official CasaOS web UI at `http://<LAN-IP>` is the recommended interface. The maintenance mode menu is intended only for low-level recovery tasks that cannot be performed through the UI.
+</Tip>

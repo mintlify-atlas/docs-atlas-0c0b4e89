@@ -1,0 +1,98 @@
+---
+title: "Deployment Logs and Health Check"
+sidebarTitle: "Logs & Health Check"
+description: "How casaosscript.sh logs all output to /var/log/casaos_deploy.log and what the final health check verifies after installation."
+---
+
+From the moment it starts, `casaosscript.sh` captures every line of output — both standard output and standard error — into a persistent log file. This is achieved with the line `exec > >(tee -a "$LOG_FILE") 2>&1` near the top of the script, which redirects all subsequent stdout and stderr through `tee`. The `tee` command writes each line to `/var/log/casaos_deploy.log` while simultaneously printing it to your terminal in real time, so you never have to choose between watching progress live and having a record for later review.
+
+## Log File Location
+
+All deployment output is appended to:
+
+```text
+/var/log/casaos_deploy.log
+```
+
+**Tail the log in real time while the script is running** (useful in a second SSH session):
+
+```bash
+tail -f /var/log/casaos_deploy.log
+```
+
+**View the last 50 lines after the run completes:**
+
+```bash
+tail -n 50 /var/log/casaos_deploy.log
+```
+
+<Note>
+  The script opens the log file in **append mode** (`tee -a`). If you re-run the script — for example after a failed first attempt — new output is appended to the existing log rather than overwriting it. This means the full history of all runs is preserved in a single file. Keep this in mind if you are searching the log for output from the most recent run only.
+</Note>
+
+## Final Health Check
+
+After CasaOS is installed and the media directory structure is created, the script performs a four-step health check to confirm that everything started correctly.
+
+```bash
+# 6. Final Health Check
+echo -e "${YELLOW}🏥 Step 4: Final Health Check...${NC}"
+sleep 5
+if systemctl is-active --quiet casaos; then
+    echo -e "${GREEN}✅ CasaOS Service: RUNNING${NC}"
+else
+    echo -e "${RED}❌ CasaOS Service: FAILED TO START${NC}"
+fi
+
+IP_ADDR=$(hostname -I | awk '{print $1}')
+echo -e "\n${GREEN}DONE! Log saved at $LOG_FILE${NC}"
+echo -e "Access: http://$IP_ADDR"
+```
+
+The four steps in sequence are:
+
+<Steps>
+  <Step title="Wait for startup">
+    `sleep 5` — pauses for 5 seconds to give CasaOS time to fully initialise its systemd service before the check runs.
+  </Step>
+  <Step title="Check service state">
+    `systemctl is-active --quiet casaos` — queries systemd for the current state of the `casaos` service. The `--quiet` flag suppresses any text output from this command; only the exit code is used.
+  </Step>
+  <Step title="Print result">
+    Depending on the exit code from the previous step, the script prints either:
+    - `✅ CasaOS Service: RUNNING` (green) — the service is active.
+    - `❌ CasaOS Service: FAILED TO START` (red) — the service did not come up in time.
+  </Step>
+  <Step title="Print access URL">
+    `hostname -I | awk '{print $1}'` — retrieves the container's primary LAN IP address and prints the access URL in the format `Access: http://<IP>`, along with the path to the saved log file.
+  </Step>
+</Steps>
+
+## Interpreting Health Check Output
+
+| Output | Meaning | Next step |
+|---|---|---|
+| `✅ CasaOS Service: RUNNING` | Installation succeeded and the service is active. | Open the printed URL in your browser to complete the CasaOS setup wizard. |
+| `❌ CasaOS Service: FAILED TO START` | The service did not become active within 5 seconds. | Check the log file and systemd journal for error details (see below). |
+
+## Checking the Service Manually
+
+If the health check reports a failure, use these commands inside the LXC container to investigate and recover:
+
+```bash
+systemctl status casaos
+```
+
+```bash
+systemctl restart casaos
+```
+
+```bash
+journalctl -u casaos -n 50
+```
+
+`journalctl -u casaos -n 50` prints the last 50 lines of the CasaOS service journal, which usually contains the specific error message that prevented startup.
+
+<Tip>
+  See the [Troubleshooting guide](/guides/troubleshooting) for a full list of common failure scenarios — including Docker nesting issues, network problems, and permission errors — along with step-by-step fixes.
+</Tip>

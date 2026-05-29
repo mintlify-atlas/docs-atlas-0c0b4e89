@@ -1,0 +1,80 @@
+---
+title: "Media Directory Structure Created by the Script"
+sidebarTitle: "Directory Structure"
+description: "Understand the /DATA directory layout created by casaosscript.sh and how to use it with Jellyfin, Plex, and other Docker-based media apps in CasaOS."
+---
+
+As part of its installation routine, `casaosscript.sh` creates a `/DATA` directory tree specifically designed for use with CasaOS Docker app containers. The layout follows a conventional home-media-server pattern that works out of the box with apps like Jellyfin and Plex, and pairs naturally with download clients such as qBittorrent or Transmission when they are also installed through the CasaOS app store.
+
+## Directory Tree
+
+The script creates the following structure on the container's root filesystem:
+
+```text
+/DATA/
+├── Media/
+│   ├── Movies/
+│   └── TV_Shows/
+└── Downloads/
+```
+
+The exact commands that produce this layout are:
+
+```bash
+mkdir -p /DATA/Media/Movies
+mkdir -p /DATA/Media/TV_Shows
+mkdir -p /DATA/Downloads
+```
+
+The `-p` flag ensures that all intermediate directories are created in a single call and that no error is raised if a directory already exists.
+
+## Permissions
+
+Immediately after creating the `/DATA/Media` tree, the script applies world-writable permissions recursively:
+
+```bash
+chmod -R 777 /DATA/Media
+```
+
+This grants full read, write, and execute access to every user and every process on the system for all files and directories under `/DATA/Media`. The `/DATA/Downloads` directory is created but no explicit `chmod` is applied to it by the script.
+
+This permissive setting is intentional for a CasaOS home-server context. Docker containers launched by CasaOS apps frequently run as non-root UIDs (for example, Jellyfin runs as UID `1000` inside its container by default). When a host directory is bind-mounted into such a container, the container process must have write access as its own UID. Using `777` sidesteps any UID mismatch without requiring you to pre-configure a matching user account on the host.
+
+<Tip>
+  For a production or security-sensitive deployment, consider replacing `777` with more restrictive permissions. Create a dedicated system user (e.g., `media`) whose UID matches the UID used inside your Docker containers, then set ownership with `chown -R media:media /DATA` and permissions with `chmod -R 755 /DATA`. This keeps your media files protected while still allowing the containers that need access to read and write them.
+</Tip>
+
+## Using with Jellyfin or Plex in CasaOS
+
+The directories created by the script map directly to the library paths you configure when installing a media server from the CasaOS app store.
+
+<Steps>
+  <Step title="Open CasaOS in the browser">
+    Navigate to `http://<your-container-ip>` in a browser on your local network. Complete the first-run setup wizard if you have not already done so.
+  </Step>
+  <Step title="Install Jellyfin or Plex from the App Store">
+    Click the **App Store** icon on the CasaOS dashboard. Search for **Jellyfin** or **Plex Media Server** and click **Install**.
+  </Step>
+  <Step title="Map your library paths">
+    During the installation dialog, configure the volume bindings so that the app container can see your media directories:
+    - Map `/DATA/Media/Movies` → Movies library path inside the container
+    - Map `/DATA/Media/TV_Shows` → TV Shows library path inside the container
+
+    The exact container-side path depends on the app (e.g., Jellyfin uses `/media` by default). Adjust as shown in the app's installation form.
+  </Step>
+  <Step title="Map the downloads directory">
+    If you are also installing a torrent or Usenet download client (e.g., qBittorrent), map its download destination to `/DATA/Downloads` on the host. This keeps completed downloads accessible to your media server without copying files.
+  </Step>
+</Steps>
+
+## Adding More Directories
+
+The initial directory set covers Movies, TV Shows, and Downloads, but you can extend the structure at any time. Log into the container shell and run:
+
+```bash
+mkdir -p /DATA/Media/Music
+mkdir -p /DATA/Media/Photos
+chmod -R 777 /DATA/Media
+```
+
+Re-applying `chmod -R 777 /DATA/Media` ensures that any newly created subdirectories inherit the same permissive access as the originals. After creating new directories, add them as additional library paths inside your Jellyfin or Plex container through the CasaOS app settings.

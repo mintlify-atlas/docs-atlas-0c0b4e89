@@ -1,47 +1,114 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with Proxmox CasaOS Deploy"
+sidebarTitle: "Quickstart"
+description: "Deploy CasaOS on a Proxmox LXC container in under five minutes using the automated casaosscript.sh Bash script."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
-
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+This guide walks you through every step needed to go from a blank Proxmox host to a fully running CasaOS instance — from creating the LXC container to opening the setup wizard in your browser. If your container is already created and you want a line-by-line breakdown of what the script does, see the [detailed installation walkthrough](/guides/installation).
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+  <Step title="Create a Proxmox LXC Container">
+    In the Proxmox web interface select **Create CT** and configure the container with the following minimum specifications:
+
+    | Setting | Recommended value |
+    |---|---|
+    | Template | Debian 12 or Ubuntu 22.04 |
+    | CPU cores | 2 |
+    | RAM | 2048 MB (2 GB) |
+    | Disk | 10 GB |
+
+    Before confirming, open the **Options** tab for the new container and enable **Nesting**. Nesting allows the container to run Docker — which CasaOS relies on for its entire app store — so this step is required, not optional.
+  </Step>
+
+  <Step title="Access the Container Shell">
+    Start the container, then open a root shell using one of two methods:
+
+    **Proxmox web console** — select the container in the left-hand tree, click the **Console** tab, and log in as `root`.
+
+    **SSH** — connect directly from your workstation once the container has an IP address:
 
     ```bash
-    npm install your-package
+    ssh root@<container-ip>
+    ```
+
+    The script checks `$EUID` at startup and exits immediately if it is not run as root, so make sure you are in a root session before proceeding.
+  </Step>
+
+  <Step title="Download the Script">
+    Inside the container shell, pull down `casaosscript.sh` using `wget`:
+
+    ```bash
+    wget https://raw.githubusercontent.com/damianiglesias/proxmox-casaos-deploy/main/casaosscript.sh
+    ```
+
+    Alternatively, clone the full repository if you prefer to have the source locally or want to review the script before running it:
+
+    ```bash
+    git clone https://github.com/damianiglesias/proxmox-casaos-deploy
+    cd proxmox-casaos-deploy
     ```
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
+
+  <Step title="Make It Executable and Run It">
+    Grant execute permission and launch the script in a single command:
 
     ```bash
-    your-cli init
+    chmod +x casaosscript.sh && bash casaosscript.sh
     ```
+
+    If you cloned the repository, the command is the same — just run it from inside the cloned directory.
+
+    <Warning>
+      The script **must be run as root**. If you are connected as a non-root user, prefix the command with `sudo` or switch to the root account with `sudo -i` first. The script will exit with an error and make no changes if it detects a non-root environment.
+    </Warning>
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
 
-    ```bash
-    your-cli start
+  <Step title="Wait for Completion">
+    The script prints coloured progress banners as it works through four stages:
+
     ```
+    =============================================
+           CASAOS DEPLOYER & ADMIN TOOL
+    =============================================
+    📦 Step 1: Installing Dependencies...
+    🏠 Step 2: Running CasaOS Installer...
+    📂 Step 3: Creating Media structure...
+    🏥 Step 4: Final Health Check...
+    ```
+
+    The final lines of output confirm the service state and print your container's LAN address:
+
+    ```
+    ✅ CasaOS Service: RUNNING
+
+    DONE! Log saved at /var/log/casaos_deploy.log
+    Access: http://192.168.1.x
+    ```
+
+    The exact IP shown will match the address assigned to your container by your local network's DHCP server.
+  </Step>
+
+  <Step title="Open CasaOS in Your Browser">
+    On any device connected to your local network, navigate to the address printed in the final output — for example:
+
+    ```
+    http://192.168.1.x
+    ```
+
+    CasaOS listens on port 80 by default, so no port number is needed in the URL. The first time you visit the address you will see the CasaOS initial setup wizard, which guides you through creating your admin account and personalising your dashboard before you start installing apps.
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+<Note>
+  For a detailed line-by-line explanation of every command the script runs — including what each dependency does and how the health check works — see the [Installation Guide](/guides/installation).
+</Note>
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
+<Tip>
+  If the script fails or CasaOS does not appear to start correctly, check the deployment log for the full output of every command that ran during the install:
+
+  ```bash
+  cat /var/log/casaos_deploy.log
+  ```
+
+  The log captures both stdout and stderr for every step, making it straightforward to spot which command produced an error.
 </Tip>

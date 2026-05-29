@@ -1,0 +1,78 @@
+---
+title: "Prerequisites for Proxmox CasaOS Deploy"
+sidebarTitle: "Prerequisites"
+description: "Hardware, software, and network requirements to run the CasaOS deployment script on a Proxmox LXC container running Debian or Ubuntu."
+---
+
+Before running `casaosscript.sh`, make sure your environment meets a few hard requirements: a working Proxmox host, a Debian or Ubuntu LXC container provisioned inside it, outbound internet access from that container, and the ability to run commands as root. Each of these is checked or assumed by the script — missing any one of them will cause the deployment to fail.
+
+## Proxmox Host
+
+You need a machine running **Proxmox Virtual Environment** (any recent release). Proxmox VE is a free, open-source hypervisor available at proxmox.com that provides the LXC container runtime this script targets. The script itself runs _inside_ an LXC container, not on the Proxmox host node directly — the host only needs to be healthy enough to have a container running on it.
+
+<Note>
+  The script does **not** support Proxmox virtual machines (VMs). It is designed exclusively for LXC containers. Running it inside a VM will still work as a plain Debian/Ubuntu server, but the Proxmox-specific nesting guidance below will not apply.
+</Note>
+
+## LXC Container Requirements
+
+Provision your container from the Proxmox web UI or CLI before running the script. The following specs are required or strongly recommended:
+
+| Requirement | Minimum | Recommended |
+|---|---|---|
+| **Operating System** | Debian 12 (Bookworm) or Ubuntu 22.04 LTS | Debian 12 (Bookworm) |
+| **CPU** | 2 cores | 4 cores |
+| **RAM** | 2 GB | 4 GB (for running Docker app containers) |
+| **Disk** | 10 GB | 32 GB+ (for media storage) |
+| **Network** | Bridged to LAN (DHCP or static IP) | Static LAN IP |
+| **Nesting** | Must be enabled | Must be enabled |
+
+<Warning>
+  Running this script on any OS other than Debian or Ubuntu — including Alpine, Fedora, or Arch-based containers — will fail at the `apt-get` step, since the script does not detect the distribution and calls `apt-get` unconditionally.
+</Warning>
+
+### Enabling Nesting
+
+CasaOS runs Docker containers inside your LXC container. For Docker to work inside an LXC container, **nesting must be enabled** on the container. Without it, Docker will fail to start and the CasaOS service will not come up.
+
+**Via the Proxmox Web UI:**
+
+1. Select the LXC container in the Proxmox node tree.
+2. Open the **Options** tab.
+3. Double-click **Features**.
+4. Check the **Nesting** checkbox and click OK.
+
+**Via the Proxmox host shell (`pct`):**
+
+```bash
+pct set <vmid> --features nesting=1
+```
+
+Replace `<vmid>` with your container's numeric ID (e.g., `100`). The container must be restarted for the change to take effect.
+
+## Root Access
+
+The script checks for root privileges as its very first action and exits immediately if the check fails:
+
+```bash
+# 1. Check Root
+if [ "$EUID" -ne 0 ]; then 
+  echo -e "${RED}❌ Please run as root${NC}"
+  exit 1
+fi
+```
+
+Run the script either as the `root` user directly or via `sudo bash casaosscript.sh`. Using `sudo ./casaosscript.sh` also works, provided `sudo` is installed and configured.
+
+## Internet Access
+
+The container must have outbound internet connectivity throughout the entire installation. The script makes two categories of external network requests:
+
+1. **Debian/Ubuntu package repositories** — for `apt-get update` and installing `curl`, `wget`, `git`, `htop`, and `neofetch`.
+2. **CasaOS installer** — fetched directly from the IceWhaleTech GitHub repository:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/IceWhaleTech/get/main/get.sh | bash
+```
+
+Ensure that your Proxmox host's bridge interface (typically `vmbr0`) has a route to the internet and that no firewall rule on the host or container blocks outbound HTTPS (port 443) traffic.

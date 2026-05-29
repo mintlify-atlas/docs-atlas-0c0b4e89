@@ -1,0 +1,54 @@
+{
+  "projectType": "infrastructure",
+  "projectName": "Proxmox CasaOS Deploy",
+  "projectDescription": "A Bash script that automates the deployment of CasaOS on a Proxmox LXC container, turning it into a fully configured Home Media Server.",
+  "theme": "aspen",
+  "primaryColor": "#E05C1A",
+  "lightColor": "#F97316",
+  "darkColor": "#C2440E",
+  "navigation": {
+    "groups": [
+      {
+        "group": "Get Started",
+        "pages": [
+          "introduction",
+          "quickstart"
+        ]
+      },
+      {
+        "group": "Setup & Deployment",
+        "pages": [
+          "guides/prerequisites",
+          "guides/installation",
+          "guides/directory-structure"
+        ]
+      },
+      {
+        "group": "Operations",
+        "pages": [
+          "guides/maintenance-mode",
+          "guides/logging-health-check",
+          "guides/troubleshooting"
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Automated Debian/Ubuntu system update and dependency installation (curl, wget, git, htop, neofetch)",
+    "One-command CasaOS installation via the official IceWhaleTech installer",
+    "Automatic /DATA/Media directory structure creation for Jellyfin/Plex (Movies, TV_Shows, Downloads)",
+    "Permission hardening on media directories to prevent Docker permission issues",
+    "Built-in maintenance mode when CasaOS is already installed (password reset, service status)",
+    "Persistent deployment log at /var/log/casaos_deploy.log",
+    "Final health check that reports CasaOS service status and LAN IP access URL"
+  ],
+  "publicApiSurface": [
+    "casaosscript.sh — main entry-point script (run as root inside a Proxmox LXC container)",
+    "Maintenance mode option 1: Reset user password (casaos-user-service-db-util)",
+    "Maintenance mode option 2: Check CasaOS service status (systemctl status casaos)",
+    "/DATA/Media/Movies — auto-created media directory",
+    "/DATA/Media/TV_Shows — auto-created media directory",
+    "/DATA/Downloads — auto-created downloads directory",
+    "/var/log/casaos_deploy.log — persistent deployment log"
+  ]
+}

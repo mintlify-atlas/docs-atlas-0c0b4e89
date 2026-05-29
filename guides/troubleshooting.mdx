@@ -1,0 +1,184 @@
+---
+title: "Troubleshooting Proxmox CasaOS Deploy"
+sidebarTitle: "Troubleshooting"
+description: "Solutions for common issues encountered when deploying CasaOS on Proxmox LXC, including failed installs, service failures, and network access problems."
+---
+
+This page covers the most common failure scenarios you may encounter when running `casaosscript.sh` on a Proxmox LXC container, and provides step-by-step guidance for resolving each one. If your issue is not listed here, the log file at `/var/log/casaos_deploy.log` and the systemd journal are the best places to start digging.
+
+<AccordionGroup>
+
+  <Accordion title="Script exits with 'Please run as root'">
+
+    **Cause:** The script checks `$EUID` at startup and exits immediately if it is not zero. This means it was invoked by a non-root user.
+
+    **Error message:**
+
+    ```text
+    ❌ Please run as root
+    ```
+
+    **Fix:** Re-run the script with `sudo`, or switch to the root account first.
+
+    ```bash
+    sudo bash casaosscript.sh
+    ```
+
+    Alternatively, switch to root and then run the script:
+
+    ```bash
+    su -
+    bash casaosscript.sh
+    ```
+
+  </Accordion>
+
+  <Accordion title="apt-get fails or curl could not be installed">
+
+    **Cause:** The LXC container has no outbound internet access, or DNS is not configured correctly. The script calls `apt-get update` and installs `curl`, `wget`, `git`, `htop`, and `neofetch` as the first step. If `curl` is still unavailable after the install attempt, the script prints a fatal error and exits.
+
+    **Error message from the script:**
+
+    ```text
+    ❌ FATAL ERROR: curl could not be installed. Check your internet connection.
+    ```
+
+    **Fix:**
+
+    1. Check that a DNS nameserver is configured inside the container:
+
+       ```bash
+       cat /etc/resolv.conf
+       ```
+
+       You should see at least one `nameserver` line (e.g. `nameserver 8.8.8.8`).
+
+    2. Test basic connectivity to the internet:
+
+       ```bash
+       ping -c 3 8.8.8.8
+       ```
+
+    3. Test DNS resolution:
+
+       ```bash
+       ping -c 3 debian.org
+       ```
+
+    4. If both ping tests fail, verify in the Proxmox web UI that the LXC container has a **network bridge** assigned (typically `vmbr0`) and that the bridge itself has a valid gateway configured on the Proxmox host.
+
+  </Accordion>
+
+  <Accordion title="CasaOS Service: FAILED TO START">
+
+    **Cause:** The CasaOS installer completed but the `casaos` systemd service did not become active within the 5-second window the health check waits, or a required dependency (most commonly Docker) failed to start.
+
+    **Error message:**
+
+    ```text
+    ❌ CasaOS Service: FAILED TO START
+    ```
+
+    **Fix:**
+
+    1. Inspect the systemd journal for the specific error:
+
+       ```bash
+       journalctl -u casaos -n 100 --no-pager
+       ```
+
+    2. Try restarting the service manually:
+
+       ```bash
+       systemctl restart casaos
+       ```
+
+    3. Review the full deploy log for earlier errors:
+
+       ```bash
+       cat /var/log/casaos_deploy.log
+       ```
+
+    4. **If Docker is the underlying cause:** CasaOS relies on Docker, and Docker requires Linux kernel namespaces and cgroups that are disabled by default in unprivileged LXC containers. In the Proxmox web UI, navigate to the container's **Options** tab and enable **Nesting**. Restart the container and re-run the script.
+
+  </Accordion>
+
+  <Accordion title="Cannot access CasaOS in the browser">
+
+    **Cause:** The LXC container's IP address is not reachable from your machine, or port 80 is blocked by a firewall rule on the container or the Proxmox host.
+
+    **Fix:**
+
+    1. Confirm the container's IP address from inside the container:
+
+       ```bash
+       hostname -I
+       ```
+
+    2. From your PC or another device on the same network, ping the container:
+
+       ```bash
+       ping <container-IP>
+       ```
+
+    3. In the Proxmox web UI, verify that the container's network interface is attached to the correct bridge (e.g. `vmbr0`) and that the bridge is connected to your LAN.
+
+    4. Check for firewall rules on the Proxmox host or within the container that might be blocking port 80:
+
+       ```bash
+       iptables -L -n | grep 80
+       ```
+
+    5. Make sure you are navigating to **`http://<IP>`** (plain HTTP on port 80) and not `https`. CasaOS does not enable HTTPS by default.
+
+  </Accordion>
+
+  <Accordion title="Script is stuck at the CasaOS installer step">
+
+    **Cause:** After dependencies are installed, the script downloads and runs the official IceWhaleTech installer with:
+
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/IceWhaleTech/get/main/get.sh | bash
+    ```
+
+    This installer fetches additional packages, container images, and configuration files. On slower internet connections or busy mirrors, this step can take significantly longer than expected.
+
+    **What to do:** Wait. The CasaOS installer typically takes **3–10 minutes** depending on your connection speed and the size of the packages being pulled. Do not interrupt the process.
+
+    To confirm progress without interrupting the script, open a second SSH session to the container and tail the log file:
+
+    ```bash
+    tail -f /var/log/casaos_deploy.log
+    ```
+
+    As long as new lines continue to appear, the installer is still running normally.
+
+  </Accordion>
+
+  <Accordion title="Docker containers in CasaOS have permission errors on /DATA/Media">
+
+    **Cause:** When Docker mounts a host directory as a volume inside a container, file access depends on the UID and GID of the process running inside the container. If those IDs do not have write access to the host directory, you will see permission denied errors in the container logs.
+
+    The script sets broad permissions on the media directory to prevent this:
+
+    ```bash
+    chmod -R 777 /DATA/Media
+    ```
+
+    If you or another tool subsequently changed the permissions on `/DATA/Media`, Docker volume mounts may start failing.
+
+    **Fix:** Restore the original permissions:
+
+    ```bash
+    chmod -R 777 /DATA/Media
+    ```
+
+    This grants read, write, and execute access to all users and is intentional for a home media server environment where convenience takes priority over strict access control.
+
+  </Accordion>
+
+</AccordionGroup>
+
+<Note>
+  If none of the solutions above resolve your issue, the CasaOS community is the best place to get further help. Visit the official CasaOS GitHub Discussions at [https://github.com/IceWhaleTech/CasaOS/discussions](https://github.com/IceWhaleTech/CasaOS/discussions) to search existing threads or open a new one.
+</Note>
